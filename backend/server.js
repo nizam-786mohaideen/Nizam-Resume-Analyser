@@ -17,7 +17,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Configure PDF upload
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_BYTES },
@@ -25,9 +24,41 @@ const upload = multer({
     if (file.mimetype !== "application/pdf") {
       return cb(new Error("Only PDF files are accepted."));
     }
-
     cb(null, true);
   },
+});
+
+// Cache the MongoDB connection for serverless requests.
+let dbConnectionPromise;
+
+async function ensureDBConnection() {
+  if (!dbConnectionPromise) {
+    dbConnectionPromise = connectDB().catch((err) => {
+      dbConnectionPromise = null;
+      throw err;
+    });
+  }
+
+  await dbConnectionPromise;
+}
+
+// Ensure the database is connected before handling API requests.
+app.use(async (req, res, next) => {
+  try {
+    await ensureDBConnection();
+    next();
+  } catch (err) {
+    console.error("MongoDB connection failed:", err.message);
+    res.status(500).json({
+      error: "Database connection failed.",
+    });
+  }
+});
+
+app.get("/", (_req, res) => {
+  res.json({
+    message: "Resume Analyzer API is running.",
+  });
 });
 
 // Resume analysis API
@@ -42,7 +73,8 @@ app.post("/api/analyse", (req, res) => {
       });
     }
 
-    const jd = (req.body.jd || "").trim();
+    const jd =
+      typeof req.body.jd === "string" ? req.body.jd.trim() : "";
 
     if (!req.file) {
       return res.status(400).json({
@@ -57,20 +89,15 @@ app.post("/api/analyse", (req, res) => {
     }
 
     try {
-      // Extract text from the uploaded PDF
       const resumeText = await extractText(req.file.buffer);
-
-      // Analyse the resume using your existing function
       const result = analyse(resumeText, jd);
 
-      // Save the analysis result in MongoDB
       const savedAnalysis = await Analysis.create({
         resumeFilename: req.file.originalname,
         jobDescription: jd,
-        result: result,
+        result,
       });
 
-      // Send the result and MongoDB document ID to the frontend
       return res.json({
         message: "Resume analysed and saved successfully!",
         analysisId: savedAnalysis._id,
@@ -86,22 +113,19 @@ app.post("/api/analyse", (req, res) => {
   });
 });
 
-// Connect MongoDB before starting the server
-async function startServer() {
-  try {
-    await connectDB();
-
-    app.listen(PORT, () => {
-      console.log(
-        `Resume analyser API running on http://localhost:${PORT}`
-      );
+// Local development only. Vercel imports the exported app.
+if (process.env.VERCEL !== "1") {
+  ensureDBConnection()
+    .then(() => {
+      app.listen(PORT, () => {
+        console.log(
+          `Resume analyser API running on http://localhost:${PORT}`
+        );
+      });
+    })
+    .catch((err) => {
+      console.error("Failed to start the server:", err.message);
     });
-  } catch (err) {
-    console.error("Failed to start the server:", err.message);
-  }
 }
 
-startServer();
-
-
-// Trigger new deployment
+export default app;
