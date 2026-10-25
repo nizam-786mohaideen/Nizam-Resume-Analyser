@@ -1,0 +1,17 @@
+{
+  "name": "nizam-resume-analyser-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.9",
+    "express": "^4.21.0",
+    "mongoose": "^9.11.4",
+    "multer": "^2.0.1",
+    "pdfjs-dist": "4.4.168"
+  }
+}
